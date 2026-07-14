@@ -76,6 +76,48 @@ Controller behavior (see `controllers/`):
 - `SemanticBudgetReconciler` manages hourly windows and triggers quarantine actions when budgets are exceeded.
 - Runtime verdict ingestion is exposed at `/v1/verdicts` by the runtime aggregator (see `controllers/runtime_aggregator.go`).
 
+## Example CRs
+
+Example `AIPolicy` for a support agent (see `config/samples/aipolicy_sample.yaml`):
+
+```yaml
+apiVersion: security.internal/v1alpha1
+kind: AIPolicy
+metadata:
+	name: support-agent-policy
+	namespace: ai-agents
+spec:
+	identity: support-agent
+	allowedTools:
+		- name: kb-search
+			riskTier: low
+		- name: ticket-update
+			riskTier: medium
+			requiresSyncCheck: true
+		- name: billing-refund
+			riskTier: high
+			requiresSyncCheck: true
+			maxCallsPerHour: 5
+	semanticBudget:
+		maxHighRiskActionsPerHour: 10
+		quarantineOnBudgetExceeded: true
+```
+
+Example standalone `SemanticBudget` (see `config/samples/semanticbudget_sample.yaml`):
+
+```yaml
+apiVersion: security.internal/v1alpha1
+kind: SemanticBudget
+metadata:
+	name: support-agent-budget
+	namespace: ai-agents
+spec:
+	identity: support-agent
+	maxHighRiskActionsPerHour: 10
+	maxTotalActionsPerHour: 200
+	quarantineOnBudgetExceeded: true
+```
+
 ## Development notes
 
 - Run the controller locally with debugging flags: `go run ./main.go --metrics-bind-address=:8080 --health-probe-bind-address=:8081`.
