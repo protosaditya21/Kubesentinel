@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 // SemanticBudgetSpecStandalone is the standalone form of a risk budget, for
@@ -77,6 +78,49 @@ type SemanticBudgetList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []SemanticBudget `json:"items"`
+}
+
+func (in *SemanticBudget) DeepCopyInto(out *SemanticBudget) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	if in.Spec.Selector != nil {
+		out.Spec.Selector = in.Spec.Selector.DeepCopy()
+	}
+	if in.Status.Conditions != nil {
+		out.Status.Conditions = make([]metav1.Condition, len(in.Status.Conditions))
+		copy(out.Status.Conditions, in.Status.Conditions)
+	}
+}
+
+func (in *SemanticBudget) DeepCopyObject() runtime.Object {
+	if in == nil {
+		return nil
+	}
+	out := new(SemanticBudget)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *SemanticBudgetList) DeepCopyInto(out *SemanticBudgetList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		out.Items = make([]SemanticBudget, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&out.Items[i])
+		}
+	}
+}
+
+func (in *SemanticBudgetList) DeepCopyObject() runtime.Object {
+	if in == nil {
+		return nil
+	}
+	out := new(SemanticBudgetList)
+	in.DeepCopyInto(out)
+	return out
 }
 
 func init() {

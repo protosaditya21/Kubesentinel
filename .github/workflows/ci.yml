@@ -51,11 +51,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
       - uses: engineerd/setup-kind@v0.11.2
       - uses: azure/setup-kubectl@v4
       - uses: azure/setup-helm@v4
       - run: kind create cluster --name kubesentinel-ci
       - run: |
+          go mod tidy
+          cd sidecar && go mod tidy
+          cd ..
           docker build -t ai-workload-controller:dev .
           docker build -t semantic-guardrail:dev ./sidecar
           kind load docker-image ai-workload-controller:dev --name kubesentinel-ci
