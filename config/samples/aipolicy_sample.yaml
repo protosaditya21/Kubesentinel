@@ -1,0 +1,20 @@
+apiVersion: security.internal/v1alpha1
+kind: AIPolicy
+metadata:
+  name: support-agent-policy
+  namespace: ai-agents
+spec:
+  identity: support-agent
+  allowedTools:
+    - name: kb-search
+      riskTier: low
+    - name: ticket-update
+      riskTier: medium
+      requiresSyncCheck: true
+    - name: billing-refund
+      riskTier: high
+      requiresSyncCheck: true
+      maxCallsPerHour: 5
+  semanticBudget:
+    maxHighRiskActionsPerHour: 10
+    quarantineOnBudgetExceeded: true

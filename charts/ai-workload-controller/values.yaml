@@ -1,0 +1,21 @@
+image:
+  repository: registry.internal/security/ai-workload-controller
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+webhook:
+  enabled: true
+  failurePolicy: Fail
+
+metrics:
+  port: 8080

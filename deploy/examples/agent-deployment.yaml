@@ -1,0 +1,37 @@
+# Example agent workload wired up to the semantic guardrail sidecar.
+# The annotations below are what \u00A76.4's admission webhook actually reads —
+# it cannot infer tool scope any other way. See docs/architecture.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-workload
+  namespace: ai-agents
+  labels:
+    workload-type: ai-agent
+  annotations:
+    ai.security.internal/policy: support-agent-policy
+    ai.security.internal/tools: "kb-search,ticket-update,billing-refund"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agent-workload
+  template:
+    metadata:
+      labels:
+        app: agent-workload
+        workload-type: ai-agent
+    spec:
+      serviceAccountName: support-agent
+      containers:
+        - name: agent
+          image: registry.internal/agents/support-agent:latest
+          ports:
+            - containerPort: 8080
+        - name: semantic-guardrail
+          image: registry.internal/security/semantic-guardrail:latest
+          ports:
+            - containerPort: 9090
+          env:
+            - name: RUNTIME_AGGREGATOR_URL
+              value: "http://ai-workload-controller.ai-security:9443/v1/verdicts"

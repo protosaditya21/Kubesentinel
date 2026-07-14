@@ -1,0 +1,21 @@
+# eBPF scope note: this policy gives kernel-level ground truth on egress
+# connections and exec events. It has no visibility into prompts, model
+# reasoning, or tool selection — that interpretation happens entirely in
+# the sidecar. See docs/architecture.md \u00A76.2.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: agent-egress-baseline
+spec:
+  podSelector:
+    matchLabels:
+      workload-type: ai-agent
+  kprobes:
+    - call: "tcp_connect"
+      syscall: false
+      args:
+        - index: 0
+          type: "sock"
+      selectors:
+        - matchActions:
+            - action: Post

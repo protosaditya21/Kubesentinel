@@ -1,0 +1,27 @@
+# Negative test fixture for the admission webhook (\u00A76.4 "Verify" step).
+# Declares a tool ("wire-transfer") that isn't in support-agent-policy's
+# allowedTools — kubectl apply-ing this should be rejected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overprivileged-agent
+  namespace: ai-agents
+  labels:
+    workload-type: ai-agent
+  annotations:
+    ai.security.internal/policy: support-agent-policy
+    ai.security.internal/tools: "kb-search,wire-transfer"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: overprivileged-agent
+  template:
+    metadata:
+      labels:
+        app: overprivileged-agent
+        workload-type: ai-agent
+    spec:
+      containers:
+        - name: agent
+          image: registry.internal/agents/support-agent:latest

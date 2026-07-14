@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ai-workload-controller
+description: Operator providing AIPolicy and SemanticBudget CRDs, admission webhook, and runtime aggregator for agentic Kubernetes workloads.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,10 @@
+apiVersion: security.internal/v1alpha1
+kind: SemanticBudget
+metadata:
+  name: support-agent-budget
+  namespace: ai-agents
+spec:
+  identity: support-agent
+  maxHighRiskActionsPerHour: 10
+  maxTotalActionsPerHour: 200
+  quarantineOnBudgetExceeded: true

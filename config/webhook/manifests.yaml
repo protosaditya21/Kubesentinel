@@ -1,0 +1,22 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: ai-policy-admission
+webhooks:
+  - name: validate.aipolicy.security.internal
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    clientConfig:
+      service:
+        name: ai-workload-controller-webhook
+        namespace: ai-security
+        path: "/validate-agent-manifest"
+    rules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+    namespaceSelector:
+      matchLabels:
+        ai-workload: "true"
+    failurePolicy: Fail

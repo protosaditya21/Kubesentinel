@@ -1,0 +1,76 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: aipolicies.security.internal
+spec:
+  group: security.internal
+  names:
+    kind: AIPolicy
+    listKind: AIPolicyList
+    plural: aipolicies
+    singular: aipolicy
+    shortNames:
+      - aip
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Identity
+          type: string
+          jsonPath: .spec.identity
+        - name: Quarantined
+          type: boolean
+          jsonPath: .status.quarantined
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [identity]
+              properties:
+                identity:
+                  type: string
+                allowedTools:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, riskTier]
+                    properties:
+                      name:
+                        type: string
+                      riskTier:
+                        type: string
+                        enum: [low, medium, high]
+                      requiresSyncCheck:
+                        type: boolean
+                      maxCallsPerHour:
+                        type: integer
+                        minimum: 0
+                semanticBudget:
+                  type: object
+                  properties:
+                    maxHighRiskActionsPerHour:
+                      type: integer
+                      minimum: 0
+                    quarantineOnBudgetExceeded:
+                      type: boolean
+            status:
+              type: object
+              properties:
+                quarantined:
+                  type: boolean
+                highRiskActionsInWindow:
+                  type: integer
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
