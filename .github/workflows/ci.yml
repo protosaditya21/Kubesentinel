@@ -156,8 +156,16 @@ jobs:
                 args: ["curl -fS http://$POD_IP:9090/healthz"]
           EOF
           kubectl apply -f /tmp/curl-test.yaml
-          kubectl wait --for=condition=Succeeded pod/curl-test -n ai-agents --timeout=120s
-          kubectl logs pod/curl-test -n ai-agents
+          kubectl wait --for=condition=Succeeded pod/curl-test -n ai-agents --timeout=120s || true
+          kubectl get pod curl-test -n ai-agents -o wide
+          kubectl describe pod curl-test -n ai-agents || true
+          kubectl logs pod/curl-test -n ai-agents || true
+          STATUS=$(kubectl get pod curl-test -n ai-agents -o jsonpath='{.status.phase}')
+          echo "curl-test pod phase: $STATUS"
+          if [ "$STATUS" != "Succeeded" ]; then
+            kubectl delete pod curl-test -n ai-agents --ignore-not-found
+            exit 1
+          fi
           kubectl delete pod curl-test -n ai-agents --ignore-not-found
       - run: |
           kubectl -n ai-agents get aipolicy support-agent-policy -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' || true
