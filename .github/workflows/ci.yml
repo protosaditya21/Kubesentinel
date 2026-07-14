@@ -47,6 +47,7 @@ jobs:
       - uses: azure/setup-helm@v4
       - run: helm lint charts/ai-workload-controller
 
+
   kind-integration:
     runs-on: ubuntu-latest
     steps:
