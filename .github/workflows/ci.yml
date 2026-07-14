@@ -141,6 +141,23 @@ jobs:
           POD_IP=$(kubectl -n ai-agents get pod -l app=test-agent -o jsonpath='{.items[0].status.podIP}')
           echo "POD_IP=$POD_IP"
           echo "Attempting health check using a curl helper pod"
-          kubectl run -n ai-agents curl-test --rm -i --restart=Never --image=curlimages/curl:8.0.1 --command -- /bin/sh -c "curl -fS http://$POD_IP:9090/healthz"
+          cat > /tmp/curl-test.yaml <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: curl-test
+            namespace: ai-agents
+          spec:
+            restartPolicy: Never
+            containers:
+              - name: curl
+                image: curlimages/curl:8.0.1
+                command: ["/bin/sh", "-c"]
+                args: ["curl -fS http://$POD_IP:9090/healthz"]
+          EOF
+          kubectl apply -f /tmp/curl-test.yaml
+          kubectl wait --for=condition=Succeeded pod/curl-test -n ai-agents --timeout=120s
+          kubectl logs pod/curl-test -n ai-agents
+          kubectl delete pod curl-test -n ai-agents --ignore-not-found
       - run: |
           kubectl -n ai-agents get aipolicy support-agent-policy -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' || true
