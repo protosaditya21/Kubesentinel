@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+      - run: go mod tidy
       - run: go build ./...
       - run: go vet ./...
 
@@ -26,6 +27,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
+      - run: go mod tidy
       - run: go build ./...
       - run: go vet ./...
 
