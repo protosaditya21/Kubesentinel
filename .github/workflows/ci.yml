@@ -141,7 +141,7 @@ jobs:
           POD_IP=$(kubectl -n ai-agents get pod -l app=test-agent -o jsonpath='{.items[0].status.podIP}')
           echo "POD_IP=$POD_IP"
           echo "Attempting health check using a curl helper pod"
-          cat > /tmp/curl-test.yaml <<'EOF'
+          cat > /tmp/curl-test.yaml <<EOF
           apiVersion: v1
           kind: Pod
           metadata:
