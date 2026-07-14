@@ -140,7 +140,7 @@ jobs:
           kubectl -n ai-agents logs $POD_NAME -c agent --tail=200 || true
           POD_IP=$(kubectl -n ai-agents get pod -l app=test-agent -o jsonpath='{.items[0].status.podIP}')
           echo "POD_IP=$POD_IP"
-          echo "Attempting health check via curl pod"
-          kubectl -n ai-agents run --rm -i curl-test --restart=Never --image=curlimages/curl:8.0.1 -- /bin/sh -c "curl -fS http://$POD_IP:9090/healthz"
+          echo "Attempting health check inside the semantic-guardrail container"
+          kubectl exec -n ai-agents "$POD_NAME" -c semantic-guardrail -- curl -fS http://127.0.0.1:9090/healthz
       - run: |
           kubectl -n ai-agents get aipolicy support-agent-policy -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' || true
