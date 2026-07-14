@@ -71,39 +71,46 @@ jobs:
           kubectl apply -f config/samples/aipolicy_sample.yaml
           kubectl apply -f config/samples/semanticbudget_sample.yaml
       - run: |
-          cat > /tmp/test-agent.yaml <<'EOF'
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-agent
-  namespace: ai-agents
-  labels:
-    workload-type: ai-agent
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: test-agent
-  template:
-    metadata:
-      labels:
-        app: test-agent
-        workload-type: ai-agent
-    spec:
-      containers:
-        - name: agent
-          image: nginx:alpine
-          ports:
-            - containerPort: 80
-        - name: semantic-guardrail
-          image: semantic-guardrail:dev
-          imagePullPolicy: Never
-          ports:
-            - containerPort: 9090
-          env:
-            - name: RUNTIME_AGGREGATOR_URL
-              value: "http://ai-workload-controller.ai-security:9443/v1/verdicts"
-EOF
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          content = dedent('''
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: test-agent
+            namespace: ai-agents
+            labels:
+              workload-type: ai-agent
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: test-agent
+            template:
+              metadata:
+                labels:
+                  app: test-agent
+                  workload-type: ai-agent
+              spec:
+                containers:
+                  - name: agent
+                    image: nginx:alpine
+                    ports:
+                      - containerPort: 80
+                  - name: semantic-guardrail
+                    image: semantic-guardrail:dev
+                    imagePullPolicy: Never
+                    ports:
+                      - containerPort: 9090
+                    env:
+                      - name: RUNTIME_AGGREGATOR_URL
+                        value: "http://ai-workload-controller.ai-security:9443/v1/verdicts"
+          ''')
+
+          Path('/tmp/test-agent.yaml').write_text(content)
+          PY
           kubectl apply -f /tmp/test-agent.yaml
       - run: |
           kubectl -n ai-agents rollout status deploy/test-agent --timeout=120s
