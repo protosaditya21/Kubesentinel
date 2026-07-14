@@ -124,11 +124,11 @@ jobs:
           Path('/tmp/test-agent.yaml').write_text(content)
           PY
           kubectl apply -f /tmp/test-agent.yaml
-        - run: |
+      - run: |
           # Allow more time for images to be pulled and containers to start in CI
           kubectl -n ai-agents rollout status deploy/test-agent --timeout=300s || true
           kubectl -n ai-agents wait --for=condition=available deployment/test-agent --timeout=300s || true
-        - run: |
+      - run: |
           echo "Gathering pod diagnostics for troubleshooting"
           kubectl -n ai-agents get pods -o wide
           POD_NAME=$(kubectl -n ai-agents get pod -l app=test-agent -o jsonpath='{.items[0].metadata.name}')
@@ -142,5 +142,5 @@ jobs:
           echo "POD_IP=$POD_IP"
           echo "Attempting health check via curl pod"
           kubectl -n ai-agents run --rm -i curl-test --restart=Never --image=curlimages/curl:8.0.1 -- /bin/sh -c "curl -fS http://$POD_IP:9090/healthz"
-        - run: |
+      - run: |
           kubectl -n ai-agents get aipolicy support-agent-policy -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' || true
