@@ -1,67 +1,98 @@
 # AI Workload Security for Kubernetes
 
-Kubernetes secures *where code runs* and *what it consumes*. Agentic LLM workloads need something that answers *what the workload is deciding to do* — and nothing upstream does that today. This project is a reference implementation: a sidecar for low-latency semantic filtering, a custom Kubernetes Operator for cluster-wide policy and admission control, and Tetragon/eBPF integration for kernel-level behavioral evidence.
+Kubernetes secures where code runs and what it consumes. This project is a reference implementation for defending agentic LLM workloads by combining semantic-sidecar filtering, cluster-wide policy via a Kubernetes Operator, and kernel-level observability using Tetragon/eBPF.
 
-**Status: early-stage reference implementation, not production-hardened.** Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+**Status:** early-stage reference implementation, not production-hardened. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## What this is not
+## Summary
 
-Nothing in this repo is an existing upstream Kubernetes or CNCF capability. `AIPolicy` and `SemanticBudget` are custom CRDs this project defines; the "AI Workload Controller" is a custom Operator you build and run yourself (scaffolded with [Kubebuilder](https://kubebuilder.io)). See [docs/architecture.md](docs/architecture.md) for the full design rationale, including what each component can and can't actually see.
+This repo provides:
 
-## Architecture
+- A sidecar component (low-latency filtering + pluggable classifier).
+- A Kubernetes Operator that defines two CRDs: `AIPolicy` and `SemanticBudget`.
+- An admission webhook that validates agent manifests against declared `AIPolicy` rules.
+- A runtime aggregator endpoint that the sidecar uses to report high-risk verdicts, which the operator uses for budget/quarantine decisions.
+- Optional Tetragon/eBPF tracing to correlate kernel-level events with semantic verdicts.
 
-![Architecture diagram](docs/architecture.png)
+Read the design rationale and boundaries in [docs/architecture.md](docs/architecture.md).
 
-- **Sidecar** (`sidecar/`) — tier-1 regex filtering and a pluggable tier-2 classifier interface, running in-process next to the agent. Every high-risk verdict gets reported to the operator.
-- **Operator** (`api/`, `controllers/`, `webhook/`) — reconciles `AIPolicy` and `SemanticBudget`, runs the admission webhook, and aggregates verdict events fleet-wide for budget enforcement and quarantine.
-- **Tetragon policy** (`deploy/tetragon/`) — eBPF-based egress/exec tracing for kernel-level ground truth, correlated with (not a replacement for) the sidecar's semantic verdicts.
-- **Rego policy** (`policies/rego/`) — policy-as-code that consumes risk scores as first-class input while staying deterministic and testable itself.
+## Components (what to look at)
 
-Full design writeup, including the reasoning behind each decision and the limits of each component, is in [docs/architecture.md](docs/architecture.md).
+- **Sidecar**: `sidecar/` — tier-1 (regex) and tier-2 (classifier interface) filtering. Reports high-risk calls to the operator's runtime endpoint.
+- **API types**: `api/v1alpha1/` — Go types for `AIPolicy` and `SemanticBudget` (see `api/v1alpha1/*.go`).
+- **Controllers**: `controllers/` — `AIPolicyReconciler`, `SemanticBudgetReconciler`, and `RuntimeAggregator` (see `controllers/*.go`).
+- **Webhook**: `webhook/v1alpha1/` — admission-time validation of agent manifests against `AIPolicy` constraints.
+- **Tetragon**: `deploy/tetragon/` — example eBPF tracing policies and baseline manifests for kernel-level evidence.
+- **Rego**: `policies/rego/` — example deterministic policy rules that consume the risk signal.
 
-## Quick start
+## Quick start (developer/testing)
 
-Prerequisites: Kubernetes 1.27+, Cilium CNI (for Tetragon), Helm 3, OPA Gatekeeper or Kyverno already enforcing on your target namespaces.
+Prerequisites: Kubernetes 1.27+, Helm 3, Docker/CRI to build images.
+
+Build and deploy operator locally (minikube/kind):
 
 ```bash
-# 1. Sidecar: build and push your own image, then wire it into your agent
-#    Deployment as in deploy/examples/agent-deployment.yaml.
-cd sidecar && docker build -t <your-registry>/semantic-guardrail:latest .
+# Build sidecar (optional if using published images)
+cd sidecar && docker build -t <registry>/semantic-guardrail:dev .
 
-# 2. eBPF: install Tetragon and apply the tracing policy.
-helm repo add cilium https://helm.cilium.io
-helm install tetragon cilium/tetragon -n kube-system
-kubectl apply -f deploy/tetragon/agent-egress-baseline.yaml
+# Build operator image
+cd .. && docker build -t <registry>/ai-workload-controller:dev .
 
-# 3. Operator: build and deploy the CRDs, controller, and webhook.
-docker build -t <your-registry>/ai-workload-controller:latest .
+# Apply CRDs and RBAC
 kubectl apply -f config/crd/bases/
 kubectl apply -f config/rbac/role.yaml
+
+# Install chart (or run controller locally via 'make run')
 helm install ai-workload-controller charts/ai-workload-controller -n ai-security --create-namespace
+```
 
-# 4. Define a policy for your agent identity.
+Deploy an example agent and policy:
+
+```bash
+kubectl apply -f deploy/examples/agent-deployment.yaml
 kubectl apply -f config/samples/aipolicy_sample.yaml
-
-# 5. Register the admission webhook and label your namespace.
 kubectl label namespace ai-agents ai-workload=true
 kubectl apply -f config/webhook/manifests.yaml
 ```
 
-See [docs/deployment-guide.md](docs/deployment-guide.md) for the full walkthrough with verification steps at each stage.
+See [docs/deployment-guide.md](docs/deployment-guide.md) for verification steps (health/readiness, webhook behavior, and budget simulation).
 
-## Repo layout
+## CRD Reference (high level)
 
-```
-api/v1alpha1/        AIPolicy and SemanticBudget CRD Go types
-controllers/          Reconcilers + runtime aggregator (fleet-wide event correlation)
-webhook/v1alpha1/     Admission webhook: validates declared tool scope against AIPolicy
-config/               CRD YAMLs, RBAC, webhook config, sample resources
-sidecar/              Semantic guardrail sidecar (tier-1/tier-2 filtering)
-deploy/               Tetragon policy + example agent manifests
-policies/rego/        Policy-as-code examples and tests
-charts/               Helm chart for the operator
-docs/                 Architecture writeup and deployment guide
-```
+- `AIPolicy` (api/v1alpha1):
+	- `spec.identity` (string): Agent identity this policy applies to. Required.
+	- `spec.allowedTools` (list): Tools the agent is allowed to call.
+	- `status.conditions`: `Accepted` condition is set by the controller; `status.quarantined` is toggled by budget enforcement.
+
+- `SemanticBudget` (api/v1alpha1):
+	- `spec.identity` (string): Identity or selector scope.
+	- `spec.maxHighRiskActionsPerHour` (int): Budget threshold.
+	- `spec.quarantineOnBudgetExceeded` (bool): Whether to flip quarantine flag when exceeded.
+	- `status.WindowStart` / `status.CurrentHighRiskActions`: Managed by the controller and runtime aggregator.
+
+Controller behavior (see `controllers/`):
+
+- `AIPolicyReconciler` validates policy shape and sets the `Accepted` condition; it does not enforce runtime behavior directly (`webhook/` and sidecar do that).
+- `SemanticBudgetReconciler` manages hourly windows and triggers quarantine actions when budgets are exceeded.
+- Runtime verdict ingestion is exposed at `/v1/verdicts` by the runtime aggregator (see `controllers/runtime_aggregator.go`).
+
+## Development notes
+
+- Run the controller locally with debugging flags: `go run ./main.go --metrics-bind-address=:8080 --health-probe-bind-address=:8081`.
+- The webhook path is registered at `/validate-agent-manifest` when `--enable-webhook` is true (default).
+- The runtime aggregator listens on `:9443` (in-tree) for verdict POSTs from sidecars.
+
+## Files of interest
+
+- `main.go` — manager setup, controller registration, webhook registration.
+- `controllers/aipolicy_controller.go` — policy validation and status updates.
+- `controllers/semanticbudget_controller.go` — budget lifecycle and quarantine logic.
+- `config/samples/aipolicy_sample.yaml` — example policy.
+- `deploy/examples/agent-deployment.yaml` — example agent + sidecar wiring.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and development workflow.
 
 ## License
 
