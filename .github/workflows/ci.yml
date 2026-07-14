@@ -151,9 +151,9 @@ jobs:
             restartPolicy: Never
             containers:
               - name: curl
-                image: curlimages/curl:8.0.1
+                image: alpine:3.18
                 command: ["/bin/sh", "-c"]
-                args: ["curl -fS http://$POD_IP:9090/healthz"]
+                args: ["apk add --no-cache curl >/dev/null 2>&1 && curl -fS http://$POD_IP:9090/healthz"]
           EOF
           kubectl apply -f /tmp/curl-test.yaml
           kubectl wait --for=condition=Succeeded pod/curl-test -n ai-agents --timeout=120s || true
