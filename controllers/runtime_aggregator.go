@@ -3,8 +3,10 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -45,9 +47,14 @@ func (a *RuntimeAggregator) HandleVerdict(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if ev.Identity == "" || ev.Namespace == "" {
+		http.Error(w, "identity and namespace are required", http.StatusBadRequest)
+		return
+	}
+
 	if ev.RiskTier != "high" {
 		// Only high-risk actions count against the semantic budget by design —
-		// see docs/architecture.md \u00A74.1 on risk-tiering.
+		// see docs/architecture.md §4.1 on risk-tiering.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -62,12 +69,40 @@ func (a *RuntimeAggregator) HandleVerdict(w http.ResponseWriter, r *http.Request
 }
 
 func (a *RuntimeAggregator) incrementBudget(ctx context.Context, ev VerdictEvent) error {
-	var budget securityv1alpha1.SemanticBudget
-	key := client.ObjectKey{Namespace: ev.Namespace, Name: ev.BudgetName}
-	if err := a.Get(ctx, key, &budget); err != nil {
-		return err
+	if ev.BudgetName != "" {
+		var budget securityv1alpha1.SemanticBudget
+		key := client.ObjectKey{Namespace: ev.Namespace, Name: ev.BudgetName}
+		if err := a.Get(ctx, key, &budget); err == nil {
+			budget.Status.CurrentHighRiskActions++
+			return a.Status().Update(ctx, &budget)
+		} else if !apierrors.IsNotFound(err) {
+			return err
+		}
 	}
 
-	budget.Status.CurrentHighRiskActions++
-	return a.Status().Update(ctx, &budget)
+	var policies securityv1alpha1.AIPolicyList
+	if err := a.List(ctx, &policies, client.InNamespace(ev.Namespace)); err != nil {
+		return err
+	}
+	for i := range policies.Items {
+		policy := &policies.Items[i]
+		if policy.Spec.Identity != ev.Identity {
+			continue
+		}
+		if policy.Spec.SemanticBudget == nil {
+			continue
+		}
+
+		policy.Status.HighRiskActionsInWindow++
+		if policy.Spec.SemanticBudget.QuarantineOnBudgetExceeded &&
+			policy.Status.HighRiskActionsInWindow >= policy.Spec.SemanticBudget.MaxHighRiskActionsPerHour {
+			policy.Status.Quarantined = true
+		}
+		return a.Status().Update(ctx, policy)
+	}
+
+	if ev.BudgetName != "" {
+		return fmt.Errorf("semantic budget %q not found in namespace %q", ev.BudgetName, ev.Namespace)
+	}
+	return fmt.Errorf("no semantic budget configured for identity %q in namespace %q", ev.Identity, ev.Namespace)
 }

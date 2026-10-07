@@ -62,10 +62,12 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for verification steps 
 - `AIPolicy` (api/v1alpha1):
 	- `spec.identity` (string): Agent identity this policy applies to. Required.
 	- `spec.allowedTools` (list): Tools the agent is allowed to call.
+	- `spec.semanticBudget` (optional): Embedded budget for the identity. This is supported and enforced by the runtime aggregator when a verdict is reported.
 	- `status.conditions`: `Accepted` condition is set by the controller; `status.quarantined` is toggled by budget enforcement.
 
 - `SemanticBudget` (api/v1alpha1):
-	- `spec.identity` (string): Identity or selector scope.
+	- `spec.identity` (string): Single-identity scope. Mutually exclusive with `spec.selector`.
+	- `spec.selector` (label selector): Namespace-scoped match against `AIPolicy` metadata labels. Used when a budget applies to multiple identities. Mutually exclusive with `spec.identity`.
 	- `spec.maxHighRiskActionsPerHour` (int): Budget threshold.
 	- `spec.quarantineOnBudgetExceeded` (bool): Whether to flip quarantine flag when exceeded.
 	- `status.WindowStart` / `status.CurrentHighRiskActions`: Managed by the controller and runtime aggregator.
@@ -73,8 +75,8 @@ See [docs/deployment-guide.md](docs/deployment-guide.md) for verification steps 
 Controller behavior (see `controllers/`):
 
 - `AIPolicyReconciler` validates policy shape and sets the `Accepted` condition; it does not enforce runtime behavior directly (`webhook/` and sidecar do that).
-- `SemanticBudgetReconciler` manages hourly windows and triggers quarantine actions when budgets are exceeded.
-- Runtime verdict ingestion is exposed at `/v1/verdicts` by the runtime aggregator (see `controllers/runtime_aggregator.go`).
+- `SemanticBudgetReconciler` manages hourly windows, validates budget scope, and triggers quarantine actions when budgets are exceeded.
+- Runtime verdict ingestion is exposed at `/v1/verdicts` by the runtime aggregator (see `controllers/runtime_aggregator.go`). The aggregator resolves either a named standalone budget or the embedded `AIPolicy.spec.semanticBudget` for the reporting identity.
 
 ## Example CRs
 
