@@ -2,9 +2,11 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +42,11 @@ func (r *SemanticBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	if err := validateBudgetScope(&budget); err != nil {
+		logger.Error(err, "invalid semantic budget scope", "namespace", budget.Namespace, "name", budget.Name)
+		return ctrl.Result{}, err
+	}
+
 	now := metav1.Now()
 	if budget.Status.WindowStart == nil || now.Sub(budget.Status.WindowStart.Time) > budgetWindow {
 		logger.Info("rolling over budget window", "name", budget.Name)
@@ -67,13 +74,32 @@ func (r *SemanticBudgetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: remaining}, nil
 }
 
+func validateBudgetScope(budget *securityv1alpha1.SemanticBudget) error {
+	if budget == nil {
+		return fmt.Errorf("semantic budget is nil")
+	}
+
+	if budget.Spec.Identity == "" && budget.Spec.Selector == nil {
+		return fmt.Errorf("semantic budget %s/%s must set either spec.identity or spec.selector", budget.Namespace, budget.Name)
+	}
+	if budget.Spec.Identity != "" && budget.Spec.Selector != nil {
+		return fmt.Errorf("semantic budget %s/%s cannot set both spec.identity and spec.selector", budget.Namespace, budget.Name)
+	}
+	if budget.Spec.Selector != nil {
+		if _, err := metav1.LabelSelectorAsSelector(budget.Spec.Selector); err != nil {
+			return fmt.Errorf("semantic budget %s/%s has an invalid selector: %w", budget.Namespace, budget.Name, err)
+		}
+	}
+	return nil
+}
+
 // quarantineIdentity flips the matching AIPolicy's Quarantined status flag.
-// This is what \u00A76.7 in the design doc calls "automated response" — the
+// This is what §6.7 in the design doc calls "automated response" — the
 // sidecar and admission webhook are expected to check this flag and fall
 // back to a restricted tool set (or reject calls outright) once it's set.
 func (r *SemanticBudgetReconciler) quarantineIdentity(ctx context.Context, budget securityv1alpha1.SemanticBudget) error {
-	if budget.Spec.Identity == "" {
-		return nil // selector-scoped budgets: quarantine logic left to the operator's discretion / TODO
+	if err := validateBudgetScope(&budget); err != nil {
+		return err
 	}
 
 	var policies securityv1alpha1.AIPolicyList
@@ -81,17 +107,47 @@ func (r *SemanticBudgetReconciler) quarantineIdentity(ctx context.Context, budge
 		return err
 	}
 
+	selector, err := selectorForBudget(budget)
+	if err != nil {
+		return err
+	}
+
+	var updatedAny bool
 	for i := range policies.Items {
 		p := &policies.Items[i]
-		if p.Spec.Identity != budget.Spec.Identity {
+		if budget.Spec.Identity != "" {
+			if p.Spec.Identity != budget.Spec.Identity {
+				continue
+			}
+		} else if selector != nil && !selector.Matches(labels.Set(p.Labels)) {
 			continue
 		}
+
+		if p.Status.Quarantined {
+			continue
+		}
+
 		p.Status.Quarantined = true
 		if err := r.Status().Update(ctx, p); err != nil {
 			return err
 		}
+		updatedAny = true
+	}
+
+	if !updatedAny {
+		return nil
 	}
 	return nil
+}
+
+func selectorForBudget(budget securityv1alpha1.SemanticBudget) (labels.Selector, error) {
+	if budget.Spec.Identity != "" {
+		return nil, nil
+	}
+	if budget.Spec.Selector == nil {
+		return nil, nil
+	}
+	return metav1.LabelSelectorAsSelector(budget.Spec.Selector)
 }
 
 func (r *SemanticBudgetReconciler) SetupWithManager(mgr ctrl.Manager) error {
